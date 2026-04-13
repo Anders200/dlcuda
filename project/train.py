@@ -51,15 +51,6 @@ class Trainer:
         self.global_step = 0
         
     def train_epoch(self, epoch: int) -> float:
-        """
-        Train for one epoch.
-        
-        Args:
-            epoch: Current epoch number
-        
-        Returns:
-            Average epoch loss
-        """
         self.model.train()
         running_loss = 0.0
         
@@ -98,15 +89,6 @@ class Trainer:
         return epoch_loss
     
     def validate(self, epoch: int) -> Tuple[float, float]:
-        """
-        Validate model.
-        
-        Args:
-            epoch: Current epoch number
-        
-        Returns:
-            Tuple of (validation_loss, accuracy)
-        """
         self.model.eval()
         running_loss = 0.0
         correct = 0
@@ -157,13 +139,14 @@ class Trainer:
         img_grid = vutils.make_grid(images[:num_images])
         self.writer.add_image("Sample Inputs", img_grid, epoch)
     
-    def train(self, num_epochs: int, checkpoint_dir: str = None) -> Dict:
+    def train(self, num_epochs: int, checkpoint_dir: str = None, start_epoch: int = 0) -> Dict:
         """
         Full training loop.
         
         Args:
             num_epochs: Number of epochs to train
             checkpoint_dir: Directory to save checkpoints
+            start_epoch: Starting epoch for resumed training
         
         Returns:
             Dictionary with training history
@@ -178,7 +161,7 @@ class Trainer:
         best_val_accuracy = 0.0
         best_epoch = 0
         
-        for epoch in range(num_epochs):
+        for epoch in range(start_epoch, num_epochs):
             epoch_start_time = time.time()
             
             # Train
@@ -197,6 +180,17 @@ class Trainer:
             epoch_time = time.time() - epoch_start_time
             history["epoch_times"].append(epoch_time)
             
+            # Log timing metrics
+            if self.writer:
+                self.writer.add_scalar("Performance/epoch_time_sec", epoch_time, epoch)
+                
+                # Log GPU memory usage if available
+                if torch.cuda.is_available():
+                    gpu_memory_mb = torch.cuda.memory_allocated() / (1024 ** 2)
+                    gpu_memory_reserved_mb = torch.cuda.memory_reserved() / (1024 ** 2)
+                    self.writer.add_scalar("Performance/gpu_memory_allocated_mb", gpu_memory_mb, epoch)
+                    self.writer.add_scalar("Performance/gpu_memory_reserved_mb", gpu_memory_reserved_mb, epoch)
+            
             # Update learning rate scheduler
             if self.scheduler:
                 if hasattr(self.scheduler, 'step'):
@@ -214,7 +208,7 @@ class Trainer:
             # Save checkpoint
             if checkpoint_dir and (epoch + 1) % 5 == 0:
                 checkpoint_path = f"{checkpoint_dir}/checkpoint_epoch_{epoch+1}.pt"
-                self.save_checkpoint(checkpoint_path, epoch)
+                self.save_checkpoint(checkpoint_path, epoch, best_val_acc=best_val_accuracy)
             
             # Track best model
             if val_accuracy > best_val_accuracy:
@@ -222,19 +216,25 @@ class Trainer:
                 best_epoch = epoch
                 if checkpoint_dir:
                     best_checkpoint_path = f"{checkpoint_dir}/best_model.pt"
-                    self.save_checkpoint(best_checkpoint_path, epoch, is_best=True)
+                    self.save_checkpoint(best_checkpoint_path, epoch, is_best=True, best_val_acc=best_val_accuracy)
+            
+            # Always save latest checkpoint
+            if checkpoint_dir:
+                latest_checkpoint_path = f"{checkpoint_dir}/latest.pt"
+                self.save_checkpoint(latest_checkpoint_path, epoch, best_val_acc=best_val_accuracy)
         
         print(f"\nBest validation accuracy: {best_val_accuracy:.2f}% (epoch {best_epoch+1})")
         
         return history
     
-    def save_checkpoint(self, path: str, epoch: int, is_best: bool = False):
+    def save_checkpoint(self, path: str, epoch: int, is_best: bool = False, best_val_acc: float = 0.0):
         """Save model checkpoint."""
         checkpoint = {
             "epoch": epoch,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
-            "is_best": is_best
+            "is_best": is_best,
+            "best_val_acc": best_val_acc
         }
         torch.save(checkpoint, path)
     
@@ -257,7 +257,8 @@ def train_model(
     device: str = "cuda",
     writer: SummaryWriter = None,
     scheduler_name: str = None,
-    checkpoint_dir: str = None
+    checkpoint_dir: str = None,
+    start_epoch: int = 0
 ) -> Dict:
     """
     Convenience function to train a model.
@@ -274,6 +275,7 @@ def train_model(
         writer: TensorBoard writer
         scheduler_name: Learning rate scheduler name
         checkpoint_dir: Directory to save checkpoints
+        start_epoch: Starting epoch for resumed training (default: 0)
     
     Returns:
         Training history dictionary
@@ -322,6 +324,6 @@ def train_model(
     )
     
     # Train
-    history = trainer.train(num_epochs, checkpoint_dir=checkpoint_dir)
+    history = trainer.train(num_epochs, checkpoint_dir=checkpoint_dir, start_epoch=start_epoch)
     
     return history

@@ -1,7 +1,4 @@
-"""
-Main entry point for the deep learning pipeline.
-Supports full engineering workflow with CLI arguments, logging, checkpointing, and reproducibility.
-"""
+
 
 import os
 import argparse
@@ -32,6 +29,28 @@ def load_yaml_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
+
+
+def find_latest_checkpoint(exp_name: str, log_dir: str = './runs') -> tuple:
+    """
+    Find the latest checkpoint for an experiment.
+    
+    Returns:
+        (checkpoint_path, epoch) or (None, 0) if no checkpoint found
+    """
+    checkpoint_dir = os.path.join(log_dir, exp_name, "checkpoints")
+    
+    if not os.path.exists(checkpoint_dir):
+        return None, 0
+    
+    # Try to load latest.pt first
+    latest_checkpoint = os.path.join(checkpoint_dir, "latest.pt")
+    if os.path.exists(latest_checkpoint):
+        checkpoint = torch.load(latest_checkpoint, map_location='cpu')
+        epoch = checkpoint.get('epoch', 0)
+        return latest_checkpoint, epoch
+    
+    return None, 0
 
 
 def create_experiment_config(base_config: dict, args: argparse.Namespace = None) -> dict:
@@ -85,6 +104,8 @@ def main():
                         help='Disable TensorBoard logging')
     parser.add_argument('--save-plots', action='store_true',
                         help='Save training plots')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume training from checkpoint')
     
     args = parser.parse_args()
     
@@ -162,6 +183,22 @@ def main():
     print(f"  Total parameters: {model_info['total_params']:,}")
     print(f"  Device: {model_info['device']}\n")
     
+    # Check for checkpoint if resuming
+    resume_epoch = 0
+    if args.resume:
+        checkpoint_path, epoch = find_latest_checkpoint(exp_name, config['logging']['log_dir'])
+        if checkpoint_path:
+            print(f"Resuming from checkpoint: {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            resume_epoch = checkpoint.get('epoch', 0)
+            print(f"  Resuming from epoch {resume_epoch}")
+            print(f"  Best validation accuracy: {checkpoint.get('best_val_acc', 0):.2f}%\n")
+        else:
+            print(f"Warning: No checkpoint found for experiment '{exp_name}'")
+            print(f"  Starting fresh training\n")
+            args.resume = False
+    
     # TensorBoard writer
     writer = None
     if not args.no_tensorboard:
@@ -185,7 +222,8 @@ def main():
         device=device,
         writer=writer,
         scheduler_name=config['training'].get('scheduler'),
-        checkpoint_dir=checkpoint_dir
+        checkpoint_dir=checkpoint_dir,
+        start_epoch=resume_epoch
     )
     
     # Validation on test set
