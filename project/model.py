@@ -5,6 +5,7 @@ Model architecture definitions for MNIST classification.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.models as models
 
 
 class SimpleCNN(nn.Module):
@@ -156,6 +157,31 @@ class SimpleCNNWithELU(nn.Module):
         return x
 
 
+class ResNet18(nn.Module):
+    """ResNet-18 adapted for MNIST (1-channel input, 10 output classes)."""
+    
+    def __init__(self, in_channels: int = 1, num_classes: int = 10, pretrained: bool = True):
+        super().__init__()
+        # Load pre-trained ResNet-18
+        self.model = models.resnet18(pretrained=pretrained)
+        
+        # Adapt first conv layer for 1-channel input (MNIST)
+        # Instead of 3 channels -> 64 features, use 1 channel -> 64 features
+        original_conv = self.model.conv1
+        self.model.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        # Copy weights from original (average across RGB channels)
+        with torch.no_grad():
+            self.model.conv1.weight[:, 0, :, :] = original_conv.weight.mean(dim=1)
+        
+        # Replace final FC layer for 10 classes
+        num_features = self.model.fc.in_features  # ResNet-18 has 512 features
+        self.model.fc = nn.Linear(num_features, num_classes)
+    
+    def forward(self, x):
+        return self.model(x)
+
+
 def get_model(architecture: str, in_channels: int = 1, num_classes: int = 10, device: str = "cuda") -> nn.Module:
     """
     Get model by name.
@@ -169,18 +195,22 @@ def get_model(architecture: str, in_channels: int = 1, num_classes: int = 10, de
     Returns:
         Model instance
     """
-    models = {
+    models_dict = {
         "SimpleCNN": SimpleCNN,
         "SimpleCNNWithBatchNorm": SimpleCNNWithBatchNorm,
         "DeepCNN": DeepCNN,
         "SimpleCNNWithLeakyReLU": SimpleCNNWithLeakyReLU,
         "SimpleCNNWithELU": SimpleCNNWithELU,
+        "ResNet18": ResNet18,
     }
     
-    if architecture not in models:
-        raise ValueError(f"Unknown architecture: {architecture}. Available: {list(models.keys())}")
+    if architecture not in models_dict:
+        raise ValueError(f"Unknown architecture: {architecture}. Available: {list(models_dict.keys())}")
     
-    model = models[architecture](in_channels=in_channels, num_classes=num_classes)
+    if architecture == "ResNet18":
+        model = models_dict[architecture](in_channels=in_channels, num_classes=num_classes, pretrained=True)
+    else:
+        model = models_dict[architecture](in_channels=in_channels, num_classes=num_classes)
     model = model.to(device)
     return model
 

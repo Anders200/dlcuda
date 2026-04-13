@@ -7,7 +7,7 @@ training:
   epochs: 10
   batch_size: 64
   learning_rate: 0.001
-  optimizer: "Adam"
+  optimizer: "SGD"
   weight_decay: 0.0
   scheduler: null  # null or "StepLR", "ReduceLROnPlateau"
 
@@ -22,7 +22,7 @@ data:
 
 # Model configuration
 model:
-  architecture: "SimpleCNN"  # SimpleCNN, SimpleCNNWithBatchNorm, DeepCNN, etc.
+  architecture: "DeepCNN"  # SimpleCNN, SimpleCNNWithBatchNorm, DeepCNN, etc.
   in_channels: 1
   num_classes: 10
 
