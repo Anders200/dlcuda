@@ -1,0 +1,45 @@
+# ============================================================================
+# Deep Learning Pipeline Configuration
+# ============================================================================
+
+# Basic training configuration
+training:
+  epochs: 10
+  batch_size: 64
+  learning_rate: 0.001
+  optimizer: "Adam"
+  weight_decay: 0.0
+  scheduler: null  # null or "StepLR", "ReduceLROnPlateau"
+
+# Data configuration
+data:
+  dataset: "MNIST"
+  data_dir: "./data"
+  train_size: 10000  # subset size for training
+  test_size: 2000    # subset size for testing
+  num_workers: 2
+  pin_memory: true
+
+# Model configuration
+model:
+  architecture: "SimpleCNN"  # SimpleCNN, SimpleCNNWithBatchNorm, DeepCNN, etc.
+  in_channels: 1
+  num_classes: 10
+
+# Device and reproducibility
+device: "cuda"  # cuda or cpu
+seed: 42
+deterministic: true
+
+# Logging and checkpointing
+logging:
+  log_dir: "./runs"
+  save_interval: 5  # save checkpoint every N epochs
+  log_images: true
+  log_histograms: true
+  log_feature_maps: false
+
+# Inference
+inference:
+  batch_size: 128
+  visualize: true
